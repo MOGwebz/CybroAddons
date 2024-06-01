@@ -371,6 +371,7 @@ class ImportBankStatement(models.TransientModel):
                     raise ValidationError(_("Choose correct file"))
                 # Skipping the first line
                 firstline = True
+                lines = []
                 for file_item in file_string:
                     if firstline:
                         firstline = False
@@ -382,21 +383,16 @@ class ImportBankStatement(models.TransientModel):
                             transaction_date = datetime.strptime(date_obj, "%Y-%m-%d")
                             partner = self.env['res.partner'].search([('name', '=', file_item.split(',')[4])])
                             payment_ref = file_item.split(',')[5] if len(file_item.split(',')) > 5 else 'csv file'
-                            # Creating a record in account.bank.statement model
+                            # Collecting line items
                             if partner:
-                                statement = self.env['account.bank.statement'].create({
-                                    'name': file_item.split(',')[0],
-                                    'line_ids': [
-                                        (0, 0, {
-                                            'date': transaction_date,
-                                            'payment_ref': payment_ref,
-                                            'partner_id': partner.id,
-                                            'journal_id': self.journal_id.id,
-                                            'amount': file_item.split(',')[1],
-                                            'amount_currency': file_item.split(',')[2],
-                                        }),
-                                    ],
-                                })
+                                lines.append((0, 0, {
+                                    'date': transaction_date,
+                                    'payment_ref': payment_ref,
+                                    'partner_id': partner.id,
+                                    'journal_id': self.journal_id.id,
+                                    'amount': file_item.split(',')[1],
+                                    'amount_currency': file_item.split(',')[2],
+                                }))
                             else:
                                 raise ValidationError(_("Partner not exist"))
                         else:
@@ -408,26 +404,26 @@ class ImportBankStatement(models.TransientModel):
                                 date_obj = str(fields.date.today()) if not file_item.split(',')[3] else file_item.split(',')[3]
                                 transaction_date = datetime.strptime(date_obj, "%Y-%m-%d")
                                 payment_ref = file_item.split(',')[5] if len(file_item.split(',')) > 5 else 'csv file'
-                                # Creating a record in account.bank.statement model
-                                statement = self.env['account.bank.statement'].create({
-                                    'name': file_item.split(',')[0],
-                                    'line_ids': [
-                                        (0, 0, {
-                                            'date': transaction_date,
-                                            'payment_ref': payment_ref,
-                                            'journal_id': self.journal_id.id,
-                                            'amount': file_item.split(',')[1],
-                                            'amount_currency': file_item.split(',')[2],
-                                        }),
-                                    ],
-                                })
-                return {
-                    'type': 'ir.actions.act_window',
-                    'name': 'Statements',
-                    'view_mode': 'tree',
-                    'res_model': 'account.bank.statement',
-                    'res_id': statement.id,
-                }
+                                lines.append((0, 0, {
+                                    'date': transaction_date,
+                                    'payment_ref': payment_ref,
+                                    'journal_id': self.journal_id.id,
+                                    'amount': file_item.split(',')[1],
+                                    'amount_currency': file_item.split(',')[2],
+                                }))
+                if lines:
+                    statement = self.env['account.bank.statement'].create({
+                        'name': self.file_name,
+                        'line_ids': lines,
+                        'journal_id': self.journal_id.id,
+                    })
+                    return {
+                        'type': 'ir.actions.act_window',
+                        'name': 'Statements',
+                        'view_mode': 'tree',
+                        'res_model': 'account.bank.statement',
+                        'res_id': statement.id,
+                    }
             elif split_tup[1] == '.xlsx':
                 # Reading xlsx file
                 try:
@@ -435,6 +431,7 @@ class ImportBankStatement(models.TransientModel):
                     xl_order = order.active
                 except:
                     raise ValidationError(_("Choose correct file"))
+                lines = []
                 for record in xl_order.iter_rows(min_row=2, max_row=None, min_col=None, max_col=None, values_only=True):
                     line = list(record)
                     # Reading the content from file
@@ -442,20 +439,15 @@ class ImportBankStatement(models.TransientModel):
                         partner = self.env['res.partner'].search([('name', '=', line[3])])
                         date_obj = fields.date.today() if not line[2] else line[2].date()
                         payment_ref = line[4] if len(line) > 4 else 'xlsx file'
-                        # Creating record
+                        # Collecting line items
                         if partner:
-                            statement = self.env['account.bank.statement'].create({
-                                'name': line[0],
-                                'line_ids': [
-                                    (0, 0, {
-                                        'date': date_obj,
-                                        'payment_ref': payment_ref,
-                                        'partner_id': partner.id,
-                                        'journal_id': self.journal_id.id,
-                                        'amount': line[1],
-                                    }),
-                                ],
-                            })
+                            lines.append((0, 0, {
+                                'date': date_obj,
+                                'payment_ref': payment_ref,
+                                'partner_id': partner.id,
+                                'journal_id': self.journal_id.id,
+                                'amount': line[1],
+                            }))
                         else:
                             raise ValidationError(_("Partner not exist"))
                     else:
@@ -466,25 +458,25 @@ class ImportBankStatement(models.TransientModel):
                         elif not line[3]:
                             date_obj = fields.date.today() if not line[2] else line[2].date()
                             payment_ref = line[4] if len(line) > 4 else 'xlsx file'
-                            # Creating record
-                            statement = self.env['account.bank.statement'].create({
-                                'name': line[0],
-                                'line_ids': [
-                                    (0, 0, {
-                                        'date': date_obj,
-                                        'payment_ref': payment_ref,
-                                        'journal_id': self.journal_id.id,
-                                        'amount': line[1],
-                                    }),
-                                ],
-                            })
-                return {
-                    'type': 'ir.actions.act_window',
-                    'name': 'Statements',
-                    'view_mode': 'tree',
-                    'res_model': 'account.bank.statement',
-                    'res_id': statement.id,
-                }
+                            lines.append((0, 0, {
+                                'date': date_obj,
+                                'payment_ref': payment_ref,
+                                'journal_id': self.journal_id.id,
+                                'amount': line[1],
+                            }))
+                if lines:
+                    statement = self.env['account.bank.statement'].create({
+                        'name': self.file_name,
+                        'line_ids': lines,
+                        'journal_id': self.journal_id.id,
+                    })
+                    return {
+                        'type': 'ir.actions.act_window',
+                        'name': 'Statements',
+                        'view_mode': 'tree',
+                        'res_model': 'account.bank.statement',
+                        'res_id': statement.id,
+                    }
             elif split_tup[1] == '.ofx':
                 # Searching the path of the file
                 file_attachment = self.env["ir.attachment"].search(
@@ -501,48 +493,30 @@ class ImportBankStatement(models.TransientModel):
                     raise ValidationError(_("No account information found in OFX file."))
                 if not ofx_file.account.statement:
                     raise ValidationError(_("No statement information found in OFX file."))
-                statement_list = []
-                # Reading the content from file
+                lines = []
                 for transaction in ofx_file.account.statement.transactions:
-                    if transaction.type == "debit" and transaction.amount != 0:
+                    if transaction.amount != 0:
                         payee = transaction.payee
                         amount = transaction.amount
-                        date = transaction.date
-                        if not date:
-                            date = fields.date.today()
+                        date = transaction.date if transaction.date else fields.date.today()
                         partner = self.env['res.partner'].search([('name', '=', payee)])
                         payment_ref = 'ofx file'
                         if partner:
-                            statement_list.append([partner.id, amount, date, payment_ref])
+                            lines.append((0, 0, {
+                                'date': date,
+                                'payment_ref': payment_ref,
+                                'partner_id': partner.id,
+                                'journal_id': self.journal_id.id,
+                                'amount': amount,
+                            }))
                         else:
                             raise ValidationError(_("Partner not exist"))
-                    if transaction.type == "credit" and transaction.amount != 0:
-                        payee = transaction.payee
-                        amount = transaction.amount
-                        date = transaction.date
-                        if not date:
-                            date = fields.date.today()
-                        partner = self.env['res.partner'].search([('name', '=', payee)])
-                        payment_ref = 'ofx file'
-                        if partner:
-                            statement_list.append([partner.id, amount, date, payment_ref])
-                        else:
-                            raise ValidationError(_("Partner not exist"))
-                # Creating record
-                if statement_list:
-                    for item in statement_list:
-                        statement = self.env['account.bank.statement'].create({
-                            'name': ofx_file.account.routing_number,
-                            'line_ids': [
-                                (0, 0, {
-                                    'date': item[2],
-                                    'payment_ref': item[3],
-                                    'partner_id': item[0],
-                                    'journal_id': self.journal_id.id,
-                                    'amount': item[1],
-                                }),
-                            ],
-                        })
+                if lines:
+                    statement = self.env['account.bank.statement'].create({
+                        'name': ofx_file.account.routing_number,
+                        'line_ids': lines,
+                        'journal_id': self.journal_id.id,
+                    })
                     return {
                         'type': 'ir.actions.act_window',
                         'name': 'Statements',
@@ -550,8 +524,6 @@ class ImportBankStatement(models.TransientModel):
                         'res_model': 'account.bank.statement',
                         'res_id': statement.id,
                     }
-                else:
-                    raise ValidationError(_("There is no data to import"))
             elif split_tup[1] == '.qif':
                 # Searching the path of qif file
                 file_attachment = self.env["ir.attachment"].search(
@@ -570,7 +542,7 @@ class ImportBankStatement(models.TransientModel):
                 file_item[-1] = file_item[-1].rstrip('\n')
                 if file_item[-1] == '':
                     file_item.pop()
-                statement_list = []
+                lines = []
                 for item in file_item:
                     if not item.startswith('!Type:Bank'):
                         item = '!Type:Bank' + item
@@ -584,26 +556,28 @@ class ImportBankStatement(models.TransientModel):
                             date_entry = str(fields.date.today())
                         date_object = datetime.strptime(date_entry, '%d/%m/%Y')
                         date = date_object.strftime('%Y-%m-%d')
-                        statement_list.append([payee, amount, date])
+                        partner = self.env['res.partner'].search([('name', '=', payee)])
+                        if partner:
+                            lines.append((0, 0, {
+                                'date': date,
+                                'payment_ref': 'qif file',
+                                'partner_id': partner.id,
+                                'journal_id': self.journal_id.id,
+                                'amount': amount,
+                            }))
+                        else:
+                            raise ValidationError(_("Partner not exist"))
                     else:
                         if not amount:
                             raise ValidationError(_("Amount is not set"))
                         elif not payee:
                             raise ValidationError(_("Payee is not set"))
-                # Creating record
-                if statement_list:
-                    for item in statement_list:
-                        statement = self.env['account.bank.statement'].create({
-                            'name': item[0],
-                            'line_ids': [
-                                (0, 0, {
-                                    'date': item[2],
-                                    'payment_ref': 'qif file',
-                                    'journal_id': self.journal_id.id,
-                                    'amount': item[1],
-                                }),
-                            ],
-                        })
+                if lines:
+                    statement = self.env['account.bank.statement'].create({
+                        'name': self.file_name,
+                        'line_ids': lines,
+                        'journal_id': self.journal_id.id,
+                    })
                     return {
                         'type': 'ir.actions.act_window',
                         'name': 'Statements',
