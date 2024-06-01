@@ -360,7 +360,7 @@ class ImportBankStatement(models.TransientModel):
     def action_statement_import(self):
         """Function to import csv, xlsx, ofx and qif file format"""
         split_tup = os.path.splitext(self.file_name)
-        if split_tup[1] == '.csv' or split_tup[1] == '.xlsx' or split_tup[1] == '.ofx' or split_tup[1] == '.qif':
+        if split_tup[1] in ['.csv', '.xlsx', '.ofx', '.qif']:
             if split_tup[1] == '.csv':
                 # Reading csv file
                 try:
@@ -555,4 +555,61 @@ class ImportBankStatement(models.TransientModel):
             elif split_tup[1] == '.qif':
                 # Searching the path of qif file
                 file_attachment = self.env["ir.attachment"].search(
-                    ['|', ('res_field', '!=', False),
+                    ['|', ('res_field', '!=', False), ('res_field', '=', False), ('res_id', '=', self.id), ('res_model', '=', 'import.bank.statement')],
+                    limit=1)
+                file_path = file_attachment._full_path(file_attachment.store_fname)
+                # Parsing the qif file
+                try:
+                    parser = QifParser()
+                    with open(file_path, 'r') as qiffile:
+                        qif = parser.parse(qiffile)
+                except:
+                    raise ValidationError(_("Wrong file format"))
+                file_string = str(qif)
+                file_item = file_string.split('^')
+                file_item[-1] = file_item[-1].rstrip('\n')
+                if file_item[-1] == '':
+                    file_item.pop()
+                statement_list = []
+                for item in file_item:
+                    if not item.startswith('!Type:Bank'):
+                        item = '!Type:Bank' + item
+                    data = item.split('\n')
+                    # Reading the file content
+                    date_entry = data[1][1:]
+                    amount = float(data[2][1:])
+                    payee = data[3][1:]
+                    if amount and payee:
+                        if not date_entry:
+                            date_entry = str(fields.date.today())
+                        date_object = datetime.strptime(date_entry, '%d/%m/%Y')
+                        date = date_object.strftime('%Y-%m-%d')
+                        statement_list.append([payee, amount, date])
+                    else:
+                        if not amount:
+                            raise ValidationError(_("Amount is not set"))
+                        elif not payee:
+                            raise ValidationError(_("Payee is not set"))
+                # Creating record
+                if statement_list:
+                    for item in statement_list:
+                        statement = self.env['account.bank.statement'].create({
+                            'name': item[0],
+                            'line_ids': [
+                                (0, 0, {
+                                    'date': item[2],
+                                    'payment_ref': 'qif file',
+                                    'journal_id': self.journal_id.id,
+                                    'amount': item[1],
+                                }),
+                            ],
+                        })
+                    return {
+                        'type': 'ir.actions.act_window',
+                        'name': 'Statements',
+                        'view_mode': 'tree',
+                        'res_model': 'account.bank.statement',
+                        'res_id': statement.id,
+                    }
+        else:
+            raise ValidationError(_("Choose correct file"))
